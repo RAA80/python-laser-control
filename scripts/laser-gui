@@ -1,0 +1,795 @@
+#! /usr/bin/env python3
+
+import logging
+import tkinter as tk
+from tkinter import messagebox, ttk
+
+from laser.client import LaserSerialClient, LaserTcpClient, LaserUdpClient
+from laser.device import RFL_C3000S
+from laser.protocol import LaserProtocolError
+
+logging.basicConfig(level=logging.DEBUG)
+
+
+def catch(func):
+    def wrapper(*arg, **kwarg):
+        try:
+            answer = func(*arg, **kwarg)
+        except LaserProtocolError as err:
+            messagebox.showerror("Laser Error", err)
+        except Exception as err:
+            print(err)
+        else:
+            return answer
+    return wrapper
+
+
+class CreateToolTip:
+    """Create a tooltip for a given widget."""
+
+    def __init__(self, widget, text="widget info"):
+        self.widget = widget
+        self.text = text
+        self.tw = None
+        self.widget.bind("<Enter>", self.enter)
+        self.widget.bind("<Leave>", self.close)
+
+    def enter(self, event=None):
+        x = self.widget.winfo_rootx() + 25
+        y = self.widget.winfo_rooty() + 20
+
+        self.tw = tk.Toplevel(self.widget)
+        self.tw.wm_overrideredirect(True)
+        self.tw.wm_geometry("+%d+%d" % (x, y))
+
+        label = tk.Label(self.tw, text=self.text, justify="left", background="#ffffe0")
+        label.pack(ipadx=1)
+
+        self.widget.after(3000, self.close)
+
+    def close(self, event=None):
+        if self.tw:
+            self.tw.destroy()
+
+
+class RaycusGUI:
+    def __init__(self):
+        self.root = tk.Tk()
+        self.root.title("Raycus GUI")
+        self.root.protocol("WM_DELETE_WINDOW", self.root.quit)
+        self.root.resizable(width=False, height=False)
+
+        self.client = None
+
+        client_frame = ttk.Frame(self.root)
+        client_frame.pack(side="left", fill="both", ipady=2, ipadx=2, pady=2, padx=2)
+
+        client_label = ttk.Label(client_frame, text="Select client type")
+        client_label.pack(side="top", fill="x", pady=2, padx=2)
+
+        self.client_type_var = tk.StringVar()
+        client_type_list = ["TCP", "UDP", "SERIAL"]
+        client_combo = ttk.Combobox(client_frame, values=client_type_list, textvariable=self.client_type_var, state="readonly", justify="center")
+        client_combo.pack(side="top", fill="x", pady=2, padx=2)
+
+        address_label = ttk.Label(client_frame, text="Set address")
+        address_label.pack(side="top", fill="x", pady=2, padx=2)
+
+        self.address_var = tk.StringVar()
+        address_entry = ttk.Entry(client_frame, textvariable=self.address_var, width=15, justify="center")
+        address_entry.pack(side="top", fill="x", pady=2, padx=2)
+
+        connect = ttk.Button(client_frame, text="Connect", command=self.connect)
+        connect.pack(side="top", fill="x", pady=2, padx=2)
+
+        self.connect_var = tk.StringVar()
+        connect_label = ttk.Label(client_frame, textvariable=self.connect_var)
+        connect_label.pack(side="top", fill="x", pady=2, padx=2)
+
+        switcher_frame = ttk.Frame(self.root)
+        switcher_frame.pack(side="left", fill="both", ipady=2, ipadx=2, pady=2, padx=2)
+
+        aiming_beam_frame = ttk.LabelFrame(switcher_frame, text="Aiming Beam", labelanchor="n")
+        aiming_beam_frame.pack(side="top", fill="x", pady=2, padx=2)
+
+        aiming_beam_off = ttk.Button(aiming_beam_frame, text="Disable", command=self.aiming_beam_off)
+        aiming_beam_off.pack(side="left", fill="x", pady=2, padx=2)
+        CreateToolTip(aiming_beam_off, "Turn off red beam")
+
+        aiming_beam_on = ttk.Button(aiming_beam_frame, text="Enable", command=self.aiming_beam_on)
+        aiming_beam_on.pack(side="right", fill="x", pady=2, padx=2)
+        CreateToolTip(aiming_beam_on, "Turn on red beam")
+
+        external_aiming_beam_control_frame = ttk.LabelFrame(switcher_frame, text="External Aiming Beam Control", labelanchor="n")
+        external_aiming_beam_control_frame.pack(side="top", fill="x", pady=2, padx=2)
+
+        disable_external_aiming_beam_control = ttk.Button(external_aiming_beam_control_frame, text="Disable", command=self.disable_external_aiming_beam_control)
+        disable_external_aiming_beam_control.pack(side="left", fill="x", pady=2, padx=2)
+        CreateToolTip(disable_external_aiming_beam_control, "Turn off the external red beam control")
+
+        enable_external_aiming_beam_control = ttk.Button(external_aiming_beam_control_frame, text="Enable", command=self.enable_external_aiming_beam_control)
+        enable_external_aiming_beam_control.pack(side="right", fill="x", pady=2, padx=2)
+        CreateToolTip(enable_external_aiming_beam_control, "Turn on the external red beam control")
+
+        external_control_frame = ttk.LabelFrame(switcher_frame, text="External Control", labelanchor="n")
+        external_control_frame.pack(side="top", fill="x", pady=2, padx=2)
+
+        disable_external_control = ttk.Button(external_control_frame, text="Disable", command=self.disable_external_control)
+        disable_external_control.pack(side="left", fill="x", pady=2, padx=2)
+        CreateToolTip(disable_external_control, "Turn off AD control mode")
+
+        enable_external_control = ttk.Button(external_control_frame, text="Enable", command=self.enable_external_control)
+        enable_external_control.pack(side="right", fill="x", pady=2, padx=2)
+        CreateToolTip(enable_external_control, "Switch to AD control mode")
+
+        hardware_emission_control_frame = ttk.LabelFrame(switcher_frame, text="Hardware Emission Control", labelanchor="n")
+        hardware_emission_control_frame.pack(side="top", fill="x", pady=2, padx=2)
+
+        disable_hardware_emission_control = ttk.Button(hardware_emission_control_frame, text="Disable", command=self.disable_hardware_emission_control)
+        disable_hardware_emission_control.pack(side="left", fill="x", pady=2, padx=2)
+        CreateToolTip(disable_hardware_emission_control, "Forbid to enable the laser from the control interface")
+
+        enable_hardware_emission_control = ttk.Button(hardware_emission_control_frame, text="Enable", command=self.enable_hardware_emission_control)
+        enable_hardware_emission_control.pack(side="right", fill="x", pady=2, padx=2)
+        CreateToolTip(enable_hardware_emission_control, "Allow to enable the laser from the control interface")
+
+        gate_mode_frame = ttk.LabelFrame(switcher_frame, text="Gate Mode", labelanchor="n")
+        gate_mode_frame.pack(side="top", fill="x", pady=2, padx=2)
+
+        disable_gate_mode = ttk.Button(gate_mode_frame, text="Disable", command=self.disable_gate_mode)
+        disable_gate_mode.pack(side="left", fill="x", pady=2, padx=2)
+        CreateToolTip(disable_gate_mode, "Turn off external modulation mode")
+
+        enable_gate_mode = ttk.Button(gate_mode_frame, text="Enable", command=self.enable_gate_mode)
+        enable_gate_mode.pack(side="right", fill="x", pady=2, padx=2)
+        CreateToolTip(enable_gate_mode, "Turn on external modulation mode")
+
+        emission_frame = ttk.LabelFrame(switcher_frame, text="Emission", labelanchor="n")
+        emission_frame.pack(side="top", fill="x", pady=2, padx=2)
+
+        stop_emission = ttk.Button(emission_frame, text="Disable", command=self.stop_emission)
+        stop_emission.pack(side="left", fill="x", pady=2, padx=2)
+        CreateToolTip(stop_emission, "Turn off the laser (or disable it)")
+
+        start_emission = ttk.Button(emission_frame, text="Enable", command=self.start_emission)
+        start_emission.pack(side="right", fill="x", pady=2, padx=2)
+        CreateToolTip(start_emission, "Turn on the laser (or enable it)")
+
+        main_power_frame = ttk.LabelFrame(switcher_frame, text="Main Power", labelanchor="n")
+        main_power_frame.pack(side="top", fill="x", pady=2, padx=2)
+
+        main_power_off = ttk.Button(main_power_frame, text="Disable", command=self.main_power_off)
+        main_power_off.pack(side="left", fill="x", pady=2, padx=2)
+        CreateToolTip(main_power_off, "Turn off the main power")
+
+        main_power_on = ttk.Button(main_power_frame, text="Enable", command=self.main_power_on)
+        main_power_on.pack(side="right", fill="x", pady=2, padx=2)
+        CreateToolTip(main_power_on, "Turn on the main power")
+
+        program_stop_frame = ttk.LabelFrame(switcher_frame, text="Program Stop", labelanchor="n")
+        program_stop_frame.pack(side="top", fill="x", pady=2, padx=2)
+
+        program_stop = ttk.Button(program_stop_frame, text="Stop", command=self.program_stop)
+        program_stop.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(program_stop, "Program Stop")
+
+        reset_errors_frame = ttk.LabelFrame(switcher_frame, text="Reset Errors", labelanchor="n")
+        reset_errors_frame.pack(side="top", fill="x", pady=2, padx=2)
+
+        reset_errors = ttk.Button(reset_errors_frame, text="Reset", command=self.reset_errors)
+        reset_errors.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(reset_errors, "Clear internal errors")
+
+        setter_frame = ttk.Frame(self.root)
+        setter_frame.pack(side="left", fill="both", ipady=2, ipadx=2, pady=2, padx=2)
+
+        pulse_width_frame = ttk.LabelFrame(setter_frame, text="Set Pulse Width", labelanchor="n")
+        pulse_width_frame.pack(side="top", fill="x", pady=2, padx=2)
+
+        set_pulse_width = ttk.Button(pulse_width_frame, text="Set", command=self.set_pulse_width)
+        set_pulse_width.pack(side="left", fill="x", pady=2, padx=2)
+        CreateToolTip(set_pulse_width, "Set Pulse Width")
+
+        self.pulse_width_var = tk.DoubleVar()
+        pulse_width_spin = tk.Spinbox(pulse_width_frame, textvariable=self.pulse_width_var, from_=0.1, to=100.0, increment=0.1, width=10, justify="center")
+        pulse_width_spin.pack(side="right", fill="x", pady=2, padx=2)
+
+        pulse_repetition_rate_frame = ttk.LabelFrame(setter_frame, text="Set Pulse Repetition Rate", labelanchor="n")
+        pulse_repetition_rate_frame.pack(side="top", fill="x", pady=2, padx=2)
+
+        set_pulse_repetition_rate = ttk.Button(pulse_repetition_rate_frame, text="Set", command=self.set_pulse_repetition_rate)
+        set_pulse_repetition_rate.pack(side="left", fill="x", pady=2, padx=2)
+        CreateToolTip(set_pulse_repetition_rate, "Set Pulse Repetition Rate")
+
+        self.pulse_repetition_rate_var = tk.IntVar()
+        pulse_repetition_rate_spin = tk.Spinbox(pulse_repetition_rate_frame, textvariable=self.pulse_repetition_rate_var, from_=1, to=1000, increment=1, width=10, justify="center")
+        pulse_repetition_rate_spin.pack(side="right", fill="x", pady=2, padx=2)
+
+        diode_current_frame = ttk.LabelFrame(setter_frame, text="Set Diode Current", labelanchor="n")
+        diode_current_frame.pack(side="top", fill="x", pady=2, padx=2)
+
+        set_diode_current = ttk.Button(diode_current_frame, text="Set", command=self.set_diode_current)
+        set_diode_current.pack(side="left", fill="x", pady=2, padx=2)
+        CreateToolTip(set_diode_current, "Set the operating current of the optical module (unit:%)")
+
+        self.diode_current_var = tk.DoubleVar()
+        diode_current_spin = tk.Spinbox(diode_current_frame, textvariable=self.diode_current_var, from_=0.1, to=100.0, increment=0.1, width=10, justify="center")
+        diode_current_spin.pack(side="right", fill="x", pady=2, padx=2)
+
+        ip_frame = ttk.LabelFrame(setter_frame, text="Set IP", labelanchor="n")
+        ip_frame.pack(side="top", fill="x", pady=2, padx=2)
+
+        set_ip = ttk.Button(ip_frame, text="Set", command=self.set_ip)
+        set_ip.pack(side="left", fill="x", pady=2, padx=2)
+        CreateToolTip(set_ip, "To set the IP address, you need to attach a string of decimal digits with '.'")
+
+        self.ip_var = tk.StringVar()
+        self.ip_var.set("192.168.0.10")
+        diode_current_entry = ttk.Entry(ip_frame, textvariable=self.ip_var, width=15, justify="center")
+        diode_current_entry.pack(side="right", fill="x", pady=2, padx=2)
+
+        subnet_mask_frame = ttk.LabelFrame(setter_frame, text="Set Subnet Mask", labelanchor="n")
+        subnet_mask_frame.pack(side="top", fill="x", pady=2, padx=2)
+
+        set_subnet_mask = ttk.Button(subnet_mask_frame, text="Set", command=self.set_subnet_mask)
+        set_subnet_mask.pack(side="left", fill="x", pady=2, padx=2)
+        CreateToolTip(set_subnet_mask, "To set the sub-net mask, append a string of decimal digits with '.'")
+
+        self.subnet_mask_var = tk.StringVar()
+        self.subnet_mask_var.set("255.255.255.0")
+        subnet_mask_entry = ttk.Entry(subnet_mask_frame, textvariable=self.subnet_mask_var, width=15, justify="center")
+        subnet_mask_entry.pack(side="right", fill="x", pady=2, padx=2)
+
+        up_time_frame = ttk.LabelFrame(setter_frame, text="Set Up Time", labelanchor="n")
+        up_time_frame.pack(side="top", fill="x", pady=2, padx=2)
+
+        set_up_time = ttk.Button(up_time_frame, text="Set", command=self.set_up_time)
+        set_up_time.pack(side="left", fill="x", pady=2, padx=2)
+        CreateToolTip(set_up_time, "Set power rise time (unit: ms)")
+
+        self.up_time_var = tk.IntVar()
+        up_time_spin = tk.Spinbox(up_time_frame, textvariable=self.up_time_var, from_=1, to=100, increment=1, width=10, justify="center")
+        up_time_spin.pack(side="right", fill="x", pady=2, padx=2)
+
+        down_time_frame = ttk.LabelFrame(setter_frame, text="Set Down Time", labelanchor="n")
+        down_time_frame.pack(side="top", fill="x", pady=2, padx=2)
+
+        set_down_time = ttk.Button(down_time_frame, text="Set", command=self.set_down_time)
+        set_down_time.pack(side="left", fill="x", pady=2, padx=2)
+        CreateToolTip(set_down_time, "Set power drop time (unit: ms)")
+
+        self.down_time_var = tk.IntVar()
+        down_time_spin = tk.Spinbox(down_time_frame, textvariable=self.down_time_var, from_=1, to=100, increment=1, width=10, justify="center")
+        down_time_spin.pack(side="right", fill="x", pady=2, padx=2)
+
+        program_start_frame = ttk.LabelFrame(setter_frame, text="Program Start", labelanchor="n")
+        program_start_frame.pack(side="top", fill="x", pady=2, padx=2)
+
+        program_start = ttk.Button(program_start_frame, text="Start", command=self.program_start)
+        program_start.pack(side="left", fill="x", pady=2, padx=2)
+        CreateToolTip(program_start, "Program Start")
+
+        self.program_start_var = tk.IntVar()
+        program_start_spin = tk.Spinbox(program_start_frame, textvariable=self.program_start_var, from_=1, to=100, increment=1, width=10, justify="center")
+        program_start_spin.pack(side="right", fill="x", pady=2, padx=2)
+
+        getter_frame = ttk.Frame(self.root)
+        getter_frame.pack(side="left", fill="both", ipady=2, ipadx=2, pady=2, padx=2)
+
+        read_pulse_width_frame = ttk.LabelFrame(getter_frame, text="Read Pulse Width", labelanchor="n")
+        read_pulse_width_frame.pack(side="top", fill="x", pady=2, padx=2)
+
+        read_pulse_width = ttk.Button(read_pulse_width_frame, text="Read", command=self.read_pulse_width)
+        read_pulse_width.pack(side="left", fill="x", pady=2, padx=2)
+        CreateToolTip(read_pulse_width, "Read Pulse Width")
+
+        self.read_pulse_width_var = tk.DoubleVar()
+        read_pulse_width_spin = tk.Spinbox(read_pulse_width_frame, textvariable=self.read_pulse_width_var, state="readonly", width=10, justify="center")
+        read_pulse_width_spin.pack(side="right", fill="x", pady=2, padx=2)
+
+        read_pulse_repetition_rate_frame = ttk.LabelFrame(getter_frame, text="Read Pulse Repetition Rate", labelanchor="n")
+        read_pulse_repetition_rate_frame.pack(side="top", fill="x", pady=2, padx=2)
+
+        read_pulse_repetition_rate = ttk.Button(read_pulse_repetition_rate_frame, text="Read", command=self.read_pulse_repetition_rate)
+        read_pulse_repetition_rate.pack(side="left", fill="x", pady=2, padx=2)
+        CreateToolTip(read_pulse_repetition_rate, "Read Pulse Repetition Rate")
+
+        self.read_pulse_repetition_rate_var = tk.IntVar()
+        read_pulse_repetition_spin = tk.Spinbox(read_pulse_repetition_rate_frame, textvariable=self.read_pulse_repetition_rate_var, state="readonly", width=10, justify="center")
+        read_pulse_repetition_spin.pack(side="right", fill="x", pady=2, padx=2)
+
+        current_set_point_frame = ttk.LabelFrame(getter_frame, text="Read Current Set point", labelanchor="n")
+        current_set_point_frame.pack(side="top", fill="x", pady=2, padx=2)
+
+        read_current_set_point = ttk.Button(current_set_point_frame, text="Read", command=self.read_current_set_point)
+        read_current_set_point.pack(side="left", fill="x", pady=2, padx=2)
+        CreateToolTip(read_current_set_point, "Read Current Set point")
+
+        self.current_set_point_var = tk.DoubleVar()
+        current_set_point_spin = tk.Spinbox(current_set_point_frame, textvariable=self.current_set_point_var, state="readonly", width=10, justify="center")
+        current_set_point_spin.pack(side="right", fill="x", pady=2, padx=2)
+
+        read_ip_frame = ttk.LabelFrame(getter_frame, text="Read IP", labelanchor="n")
+        read_ip_frame.pack(side="top", fill="x", pady=2, padx=2)
+
+        read_ip = ttk.Button(read_ip_frame, text="Read", command=self.read_ip)
+        read_ip.pack(side="left", fill="x", pady=2, padx=2)
+        CreateToolTip(read_ip, "Read the current IP address")
+
+        self.read_ip_var = tk.StringVar()
+        read_ip_entry = ttk.Entry(read_ip_frame, textvariable=self.read_ip_var, state="readonly", width=15, justify="center")
+        read_ip_entry.pack(side="right", fill="x", pady=2, padx=2)
+
+        read_subnet_mask_frame = ttk.LabelFrame(getter_frame, text="Read Sub-net Mask", labelanchor="n")
+        read_subnet_mask_frame.pack(side="top", fill="x", pady=2, padx=2)
+
+        read_subnet_mask = ttk.Button(read_subnet_mask_frame, text="Read", command=self.read_subnet_mask)
+        read_subnet_mask.pack(side="left", fill="x", pady=2, padx=2)
+        CreateToolTip(read_subnet_mask, "Read the current sub-net mask address")
+
+        self.read_subnet_mask_var = tk.StringVar()
+        read_subnet_mask_entry = ttk.Entry(read_subnet_mask_frame, textvariable=self.read_subnet_mask_var, state="readonly", width=15, justify="center")
+        read_subnet_mask_entry.pack(side="right", fill="x", pady=2, padx=2)
+
+        read_up_time_frame = ttk.LabelFrame(getter_frame, text="Read Up Time", labelanchor="n")
+        read_up_time_frame.pack(side="top", fill="x", pady=2, padx=2)
+
+        read_up_time = ttk.Button(read_up_time_frame, text="Read", command=self.read_up_time)
+        read_up_time.pack(side="left", fill="x", pady=2, padx=2)
+        CreateToolTip(read_up_time, "Read power rise time (unit: ms)")
+
+        self.read_up_time_var = tk.IntVar()
+        read_up_time_spin = tk.Spinbox(read_up_time_frame, textvariable=self.read_up_time_var, state="readonly", width=10, justify="center")
+        read_up_time_spin.pack(side="right", fill="x", pady=2, padx=2)
+
+        read_down_time_frame = ttk.LabelFrame(getter_frame, text="Read Down Time", labelanchor="n")
+        read_down_time_frame.pack(side="top", fill="x", pady=2, padx=2)
+
+        read_down_time = ttk.Button(read_down_time_frame, text="Read", command=self.read_down_time)
+        read_down_time.pack(side="left", fill="x", pady=2, padx=2)
+        CreateToolTip(read_down_time, "Read power drop time (unit: ms)")
+
+        self.read_down_time_var = tk.IntVar()
+        read_down_time_spin = tk.Spinbox(read_down_time_frame, textvariable=self.read_down_time_var, state="readonly", width=10, justify="center")
+        read_down_time_spin.pack(side="right", fill="x", pady=2, padx=2)
+
+        read_board_temperature_frame = ttk.LabelFrame(getter_frame, text="Read Board Temperature", labelanchor="n")
+        read_board_temperature_frame.pack(side="top", fill="x", pady=2, padx=2)
+
+        read_board_temperature = ttk.Button(read_board_temperature_frame, text="Read", command=self.read_board_temperature)
+        read_board_temperature.pack(side="left", fill="x", pady=2, padx=2)
+        CreateToolTip(read_board_temperature, "Read Board Temperature")
+
+        self.read_board_temperature_var = tk.DoubleVar()
+        read_board_temperature_spin = tk.Spinbox(read_board_temperature_frame, textvariable=self.read_board_temperature_var, state="readonly", width=10, justify="center")
+        read_board_temperature_spin.pack(side="right", fill="x", pady=2, padx=2)
+
+        read_laser_temperature_frame = ttk.LabelFrame(getter_frame, text="Read Laser Temperature", labelanchor="n")
+        read_laser_temperature_frame.pack(side="top", fill="x", pady=2, padx=2)
+
+        read_laser_temperature = ttk.Button(read_laser_temperature_frame, text="Read", command=self.read_laser_temperature)
+        read_laser_temperature.pack(side="left", fill="x", pady=2, padx=2)
+        CreateToolTip(read_laser_temperature, "Read Laser Temperature")
+
+        self.read_laser_temperature_var = tk.DoubleVar()
+        read_laser_temperature_spin = tk.Spinbox(read_laser_temperature_frame, textvariable=self.read_laser_temperature_var, state="readonly", width=10, justify="center")
+        read_laser_temperature_spin.pack(side="right", fill="x", pady=2, padx=2)
+
+        read_output_power_frame = ttk.LabelFrame(getter_frame, text="Read Output Power", labelanchor="n")
+        read_output_power_frame.pack(side="top", fill="x", pady=2, padx=2)
+
+        read_output_power = ttk.Button(read_output_power_frame, text="Read", command=self.read_output_power)
+        read_output_power.pack(side="left", fill="x", pady=2, padx=2)
+        CreateToolTip(read_output_power, "Reads the output power in watts")
+
+        self.read_output_power_var = tk.DoubleVar()
+        read_output_power_spin = tk.Spinbox(read_output_power_frame, textvariable=self.read_output_power_var, state="readonly", width=10, justify="center")
+        read_output_power_spin.pack(side="right", fill="x", pady=2, padx=2)
+
+        read_serial_number_frame = ttk.LabelFrame(getter_frame, text="Read Serial Number", labelanchor="n")
+        read_serial_number_frame.pack(side="top", fill="x", pady=2, padx=2)
+
+        read_serial_number = ttk.Button(read_serial_number_frame, text="Read", command=self.read_serial_number)
+        read_serial_number.pack(side="left", fill="x", pady=2, padx=2)
+        CreateToolTip(read_serial_number, "Reads the serial number of the device")
+
+        self.read_serial_number_var = tk.IntVar()
+        read_serial_number_spin = tk.Spinbox(read_serial_number_frame, textvariable=self.read_serial_number_var, state="readonly", width=10, justify="center")
+        read_serial_number_spin.pack(side="right", fill="x", pady=2, padx=2)
+
+        status_frame = ttk.Frame(self.root)
+        status_frame.pack(side="left", fill="both", ipady=2, ipadx=2, pady=2, padx=2)
+
+        read_device_status_frame = ttk.LabelFrame(status_frame, text="Read Device Status", labelanchor="n")
+        read_device_status_frame.pack(side="top", fill="x", pady=2, padx=2)
+
+        status_bits_frame = ttk.Frame(read_device_status_frame)
+        status_bits_frame.pack(side="top", fill="x", pady=2, padx=2)
+
+        status_bits_low_frame = ttk.Frame(status_bits_frame)
+        status_bits_low_frame.pack(side="left", fill="x", pady=2, padx=2)
+
+        self.bit_0_var = tk.IntVar()
+        bit_0 = ttk.Checkbutton(status_bits_low_frame, variable=self.bit_0_var, text="Authorization time", state="readonly")
+        bit_0.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(bit_0, "0 - Normal operation\n1 - Authorization time")
+
+        self.bit_1_var = tk.IntVar()
+        bit_1 = ttk.Checkbutton(status_bits_low_frame, variable=self.bit_1_var, text="Overheat", state="readonly")
+        bit_1.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(bit_1, "0 - Normal\n1 - Overheat")
+
+        self.bit_2_var = tk.IntVar()
+        bit_2 = ttk.Checkbutton(status_bits_low_frame, variable=self.bit_2_var, text="Laser enabled", state="readonly")
+        bit_2.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(bit_2, "0 - Laser not enabled\n1 - Laser enabled")
+
+        self.bit_3_var = tk.IntVar()
+        bit_3 = ttk.Checkbutton(status_bits_low_frame, variable=self.bit_3_var, text="High Back Reflection Level", state="readonly")
+        bit_3.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(bit_3, "0 - Back Reflection OK\n1 - High Back Reflection Level")
+
+        self.bit_4_var = tk.IntVar()
+        bit_4 = ttk.Checkbutton(status_bits_low_frame, variable=self.bit_4_var, text="External AD mode", state="readonly")
+        bit_4.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(bit_4, "0 - External AD mode=OFF\n1 - External AD mode=ON")
+
+        self.bit_5_var = tk.IntVar()
+        bit_5 = ttk.Checkbutton(status_bits_low_frame, variable=self.bit_5_var, text="Reserved", state="readonly")
+        bit_5.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(bit_5, "0 - Reserved\n1 - Reserved")
+
+        self.bit_6_var = tk.IntVar()
+        bit_6 = ttk.Checkbutton(status_bits_low_frame, variable=self.bit_6_var, text="Slave communication abnormal", state="readonly")
+        bit_6.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(bit_6, "0 - Normal\n1 - Slave communication abnormal")
+
+        self.bit_7_var = tk.IntVar()
+        bit_7 = ttk.Checkbutton(status_bits_low_frame, variable=self.bit_7_var, text="Reserved", state="readonly")
+        bit_7.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(bit_7, "0 - Reserved\n1 - Reserved")
+
+        self.bit_8_var = tk.IntVar()
+        bit_8 = ttk.Checkbutton(status_bits_low_frame, variable=self.bit_8_var, text="Aiming Beam", state="readonly")
+        bit_8.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(bit_8, "0 - Aiming Beam OFF\n1 - Aiming Beam ON")
+
+        self.bit_9_var = tk.IntVar()
+        bit_9 = ttk.Checkbutton(status_bits_low_frame, variable=self.bit_9_var, text="Laser ready", state="readonly")
+        bit_9.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(bit_9, "0 - Laser not ready\n1 - Laser ready")
+
+        self.bit_10_var = tk.IntVar()
+        bit_10 = ttk.Checkbutton(status_bits_low_frame, variable=self.bit_10_var, text="QCW mode", state="readonly")
+        bit_10.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(bit_10, "0 - QCW mode=OFF\n1 - QCW mode=ON")
+
+        self.bit_11_var = tk.IntVar()
+        bit_11 = ttk.Checkbutton(status_bits_low_frame, variable=self.bit_11_var, text="Main power supply", state="readonly")
+        bit_11.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(bit_11, "0 - main power supply=OFF\n1 - main power supply=ON")
+
+        self.bit_12_var = tk.IntVar()
+        bit_12 = ttk.Checkbutton(status_bits_low_frame, variable=self.bit_12_var, text="Modulation Enabled", state="readonly")
+        bit_12.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(bit_12, "0 - Modulation Disabled\n1 - Modulation Enabled")
+
+        self.bit_13_var = tk.IntVar()
+        bit_13 = ttk.Checkbutton(status_bits_low_frame, variable=self.bit_13_var, text="Reserved", state="readonly")
+        bit_13.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(bit_13, "0 - Reserved\n1 - Reserved")
+
+        self.bit_14_var = tk.IntVar()
+        bit_14 = ttk.Checkbutton(status_bits_low_frame, variable=self.bit_14_var, text="Reserved", state="readonly")
+        bit_14.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(bit_14, "0 - Reserved\n1 - Reserved")
+
+        self.bit_15_var = tk.IntVar()
+        bit_15 = ttk.Checkbutton(status_bits_low_frame, variable=self.bit_15_var, text="The laser is emitting beam", state="readonly")
+        bit_15.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(bit_15, "0 - Laser does not emit beam\n1 - The laser is emitting beam")
+
+        status_bits_high_frame = ttk.Frame(status_bits_frame)
+        status_bits_high_frame.pack(side="right", fill="x", pady=2, padx=2)
+
+        self.bit_16_var = tk.IntVar()
+        bit_16 = ttk.Checkbutton(status_bits_high_frame, variable=self.bit_16_var, text="Gate Mode Enabled", state="readonly")
+        bit_16.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(bit_16, "0 - Gate Mode Disabled\n1 - Gate Mode Enabled")
+
+        self.bit_17_var = tk.IntVar()
+        bit_17 = ttk.Checkbutton(status_bits_high_frame, variable=self.bit_17_var, text="Reserved", state="readonly")
+        bit_17.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(bit_17, "0 - Reserved\n1 - Reserved")
+
+        self.bit_18_var = tk.IntVar()
+        bit_18 = ttk.Checkbutton(status_bits_high_frame, variable=self.bit_18_var, text="External enable mode", state="readonly")
+        bit_18.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(bit_18, "0 - External enable mode=OFF\n1 - External enable mode=ON")
+
+        self.bit_19_var = tk.IntVar()
+        bit_19 = ttk.Checkbutton(status_bits_high_frame, variable=self.bit_19_var, text="Laser is Error", state="readonly")
+        bit_19.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(bit_19, "0 - Normal\n1 - Laser is Error")
+
+        self.bit_20_var = tk.IntVar()
+        bit_20 = ttk.Checkbutton(status_bits_high_frame, variable=self.bit_20_var, text="Slow rise and slow drop mode", state="readonly")
+        bit_20.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(bit_20, "0 - Slow rise and slow drop mode OFF\n1 - Slow rise and slow drop mode ON")
+
+        self.bit_21_var = tk.IntVar()
+        bit_21 = ttk.Checkbutton(status_bits_high_frame, variable=self.bit_21_var, text="The laser operates in 'REM'", state="readonly")
+        bit_21.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(bit_21, "0 - The laser operates in 'ON'\n1 - The laser operates in 'REM'")
+
+        self.bit_22_var = tk.IntVar()
+        bit_22 = ttk.Checkbutton(status_bits_high_frame, variable=self.bit_22_var, text="Programming mode", state="readonly")
+        bit_22.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(bit_22, "0 - Programming mode OFF\n1 - Programming mode ON")
+
+        self.bit_23_var = tk.IntVar()
+        bit_23 = ttk.Checkbutton(status_bits_high_frame, variable=self.bit_23_var, text="Reserved", state="readonly")
+        bit_23.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(bit_23, "0 - Reserved\n1 - Reserved")
+
+        self.bit_24_var = tk.IntVar()
+        bit_24 = ttk.Checkbutton(status_bits_high_frame, variable=self.bit_24_var, text="Low temperature fault", state="readonly")
+        bit_24.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(bit_24, "0 - Normal\n1 - Low temperature fault")
+
+        self.bit_25_var = tk.IntVar()
+        bit_25 = ttk.Checkbutton(status_bits_high_frame, variable=self.bit_25_var, text="Humidity alarm", state="readonly")
+        bit_25.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(bit_25, "0 - Normal\n1 - Humidity alarm")
+
+        self.bit_26_var = tk.IntVar()
+        bit_26 = ttk.Checkbutton(status_bits_high_frame, variable=self.bit_26_var, text="Flow alarm of water flow", state="readonly")
+        bit_26.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(bit_26, "0 - Normal\n1 - Flow alarm of water flow")
+
+        self.bit_27_var = tk.IntVar()
+        bit_27 = ttk.Checkbutton(status_bits_high_frame, variable=self.bit_27_var, text="Aiming beam external", state="readonly")
+        bit_27.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(bit_27, "0 - Aiming beam internal\n1 - Aiming beam external")
+
+        self.bit_28_var = tk.IntVar()
+        bit_28 = ttk.Checkbutton(status_bits_high_frame, variable=self.bit_28_var, text="Flow alarm of water flow", state="readonly")
+        bit_28.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(bit_28, "0 - Normal\n1 - Flow alarm of water flow")
+
+        self.bit_29_var = tk.IntVar()
+        bit_29 = ttk.Checkbutton(status_bits_high_frame, variable=self.bit_29_var, text="Critical Error", state="readonly")
+        bit_29.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(bit_29, "0 - Normal\n1 - Critical Error")
+
+        self.bit_30_var = tk.IntVar()
+        bit_30 = ttk.Checkbutton(status_bits_high_frame, variable=self.bit_30_var, text="Optical Interlock active", state="readonly")
+        bit_30.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(bit_30, "0 - Optical Interlock OK\n1 - Optical Interlock active")
+
+        self.bit_31_var = tk.IntVar()
+        bit_31 = ttk.Checkbutton(status_bits_high_frame, variable=self.bit_31_var, text="Average power is too high", state="readonly")
+        bit_31.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(bit_31, "0 - Normal\n1 - Average power is too high")
+
+        self.task = self.root.after_idle(self.read_device_status)
+        self.read_status_task = None
+        self.root.mainloop()
+
+    def connect(self):
+        try:
+            self.client = {"TCP": LaserTcpClient,
+                           "UDP": LaserUdpClient,
+                           "SERIAL": LaserSerialClient,
+                          }[self.client_type_var.get()](address=self.address_var.get(), device=RFL_C3000S)
+        except Exception:
+            self.connect_var.set("Status: NOT CONNECTED")
+            self.client = None
+        else:
+            self.connect_var.set("Status: CONNECTED")
+
+    @catch
+    def aiming_beam_off(self):
+        self.client.send("ABF")
+
+    @catch
+    def aiming_beam_on(self):
+        self.client.send("ABN")
+
+    @catch
+    def disable_external_aiming_beam_control(self):
+        self.client.send("DEABC")
+
+    @catch
+    def enable_external_aiming_beam_control(self):
+        self.client.send("EEABC")
+
+    @catch
+    def disable_external_control(self):
+        self.client.send("DEC")
+
+    @catch
+    def enable_external_control(self):
+        self.client.send("EEC")
+
+    @catch
+    def disable_hardware_emission_control(self):
+        self.client.send("DLE")
+
+    @catch
+    def enable_hardware_emission_control(self):
+        self.client.send("ELE")
+
+    @catch
+    def disable_gate_mode(self):
+        self.client.send("DGM")
+
+    @catch
+    def enable_gate_mode(self):
+        self.client.send("EGM")
+
+    @catch
+    def stop_emission(self):
+        self.client.send("EMOFF")
+
+    @catch
+    def start_emission(self):
+        self.client.send("EMON")
+
+    @catch
+    def main_power_off(self):
+        self.client.send("MPWROFF")
+
+    @catch
+    def main_power_on(self):
+        self.client.send("MPWRON")
+
+    @catch
+    def reset_errors(self):
+        self.client.send("PERR")
+
+    @catch
+    def program_stop(self):
+        self.client.send("PSTP")
+
+    @catch
+    def program_start(self):
+        value = self.program_start_var.get()
+        self.client.send("PSRT", value)
+
+    @catch
+    def set_pulse_width(self):
+        value = self.pulse_width_var.get()
+        self.client.send("SPW", value)
+
+    @catch
+    def set_pulse_repetition_rate(self):
+        value = self.pulse_repetition_rate_var.get()
+        self.client.send("SPRR", value)
+
+    @catch
+    def set_diode_current(self):
+        value = self.diode_current_var.get()
+        self.client.send("SDC", value)
+
+    @catch
+    def set_ip(self):
+        value = self.ip_var.get()
+        self.client.send("SIP", value)
+
+    @catch
+    def set_subnet_mask(self):
+        value = self.subnet_mask_var.get()
+        self.client.send("SMASK", value)
+
+    @catch
+    def set_up_time(self):
+        value = self.up_time_var.get()
+        self.client.send("SUT", value)
+
+    @catch
+    def set_down_time(self):
+        value = self.down_time_var.get()
+        self.client.send("SDT", value)
+
+    @catch
+    def read_current_set_point(self):
+        value = self.client.send("RCS")
+        self.current_set_point_var.set(value)
+
+    @catch
+    def read_pulse_repetition_rate(self):
+        value = self.client.send("RPRR")
+        self.read_pulse_repetition_rate_var.set(value)
+
+    @catch
+    def read_board_temperature(self):
+        value = self.client.send("RBT")
+        self.read_board_temperature_var.set(value)
+
+    @catch
+    def read_pulse_width(self):
+        value = self.client.send("RPW")
+        self.read_pulse_width_var.set(value)
+
+    @catch
+    def read_laser_temperature(self):
+        value = self.client.send("RCT")
+        self.read_laser_temperature_var.set(value)
+
+    @catch
+    def read_output_power(self):
+        value = self.client.send("ROP")
+        self.read_output_power_var.set(value)
+
+    @catch
+    def read_serial_number(self):
+        value = self.client.send("RSN")
+        self.read_serial_number_var.set(value)
+
+    @catch
+    def read_ip(self):
+        value = self.client.send("RIP")
+        self.read_ip_var.set(value)
+
+    @catch
+    def read_subnet_mask(self):
+        value = self.client.send("RMASK")
+        self.read_subnet_mask_var.set(value)
+
+    @catch
+    def read_up_time(self):
+        value = self.client.send("RUT")
+        self.read_up_time_var.set(value)
+
+    @catch
+    def read_down_time(self):
+        value = self.client.send("RDT")
+        self.read_down_time_var.set(value)
+
+    def read_device_status(self):
+        self.read_status_task = self.root.after(500, self.read_device_status)
+
+        try:
+            value = self.client.send("STA")
+            self.bit_0_var.set(bool(value >> 0 & 1))
+            self.bit_1_var.set(bool(value >> 1 & 1))
+            self.bit_2_var.set(bool(value >> 2 & 1))
+            self.bit_3_var.set(bool(value >> 3 & 1))
+            self.bit_4_var.set(bool(value >> 4 & 1))
+            self.bit_5_var.set(bool(value >> 5 & 1))
+            self.bit_6_var.set(bool(value >> 6 & 1))
+            self.bit_7_var.set(bool(value >> 7 & 1))
+            self.bit_8_var.set(bool(value >> 8 & 1))
+            self.bit_9_var.set(bool(value >> 9 & 1))
+            self.bit_10_var.set(bool(value >> 10 & 1))
+            self.bit_11_var.set(bool(value >> 11 & 1))
+            self.bit_12_var.set(bool(value >> 12 & 1))
+            self.bit_13_var.set(bool(value >> 13 & 1))
+            self.bit_14_var.set(bool(value >> 14 & 1))
+            self.bit_15_var.set(bool(value >> 15 & 1))
+            self.bit_16_var.set(bool(value >> 16 & 1))
+            self.bit_17_var.set(bool(value >> 17 & 1))
+            self.bit_18_var.set(bool(value >> 18 & 1))
+            self.bit_19_var.set(bool(value >> 19 & 1))
+            self.bit_20_var.set(bool(value >> 20 & 1))
+            self.bit_21_var.set(bool(value >> 21 & 1))
+            self.bit_22_var.set(bool(value >> 22 & 1))
+            self.bit_23_var.set(bool(value >> 23 & 1))
+            self.bit_24_var.set(bool(value >> 24 & 1))
+            self.bit_25_var.set(bool(value >> 25 & 1))
+            self.bit_26_var.set(bool(value >> 26 & 1))
+            self.bit_27_var.set(bool(value >> 27 & 1))
+            self.bit_28_var.set(bool(value >> 28 & 1))
+            self.bit_29_var.set(bool(value >> 29 & 1))
+            self.bit_30_var.set(bool(value >> 30 & 1))
+            self.bit_31_var.set(bool(value >> 31 & 1))
+        except Exception as err:
+            print(err)
+            self.connect_var.set("Status: NOT CONNECTED")
+        else:
+            self.connect_var.set("Status: CONNECTED")
+
+
+if __name__ == "__main__":
+    RaycusGUI()
