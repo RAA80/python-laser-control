@@ -7,19 +7,21 @@ import laser.device
 from laser.client import LaserSerialClient, LaserTcpClient, LaserUdpClient
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Laser Control Protocol command-line option")
+    parser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter,
+                                     description="Laser Control Protocol command-line option",
+                                     epilog="Usage example:\n"
+                                            "laser-console --device RFL_C3000S --method TCP --address '127.0.0.1:10001' --send MPWROFF\n"
+                                            "laser-console --device RFL_C3000S --method UDP --address '127.0.0.1:8099' --send SUT 10\n"
+                                            "laser-console --device RFL_C3000S --method SERIAL --address 'COM1' --baudrate 9600 --send RUT")
 
+    parser.add_argument("--device", type=str, required=True,
+                                    help="device name (see device.py)")
     parser.add_argument("--method", type=str, choices=["SERIAL", "TCP", "UDP"],
                                     required=True, help="factory method")
     parser.add_argument("--address", type=str, required=True,
-                                     help="serial port or IP-address")
-    parser_ex = parser.add_mutually_exclusive_group()
-    parser_ex.add_argument("--port", type=int, default=10001,
-                                     help="network port")
-    parser_ex.add_argument("--baudrate", type=int, default=9600,
-                                         help="serial port baudrate")
-    parser.add_argument("--device", type=str, required=True,
-                                    help="device name")
+                                     help="serial port or IP:PORT address")
+    parser.add_argument("--baudrate", type=int, default=9600,
+                                      help="serial port baudrate")
     parser.add_argument("--send", type=str, nargs="+", metavar=("CMD", "VALUE"),
                                   required=True, help="send CMD with value")
     parser.add_argument("--debug", action="store_true",
@@ -29,14 +31,15 @@ if __name__ == "__main__":
     if args.debug:
         logging.basicConfig(level=logging.DEBUG)
 
-    factory = {"SERIAL": LaserSerialClient,
-               "TCP": LaserTcpClient,
-               "UDP": LaserUdpClient,
-              }[args.method]
     device = getattr(laser.device, args.device)
 
-    client = factory(address=args.address, port=args.port,
-                     baudrate=args.baudrate, device=device)
+    if args.method == "SERIAL":
+        client = LaserSerialClient(device=device, address=args.address, baudrate=args.baudrate)
+    elif args.method == "TCP":
+        client = LaserTcpClient(device=device, address=args.address)
+    elif args.method == "UDP":
+        client = LaserUdpClient(device=device, address=args.address)
+
     if args.send:
         cmd = args.send[0]
         try:

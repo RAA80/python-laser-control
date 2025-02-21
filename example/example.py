@@ -11,10 +11,9 @@ logging.basicConfig(level=logging.INFO)
 
 
 if __name__ == "__main__":
-    # client = LaserSerialClient(address="COM1", baudrate=9600, device=RFL_C3000S)
-    # client = LaserUdpClient(address="127.0.0.1", port=8099, device=RFL_C3000S)
-    client = LaserTcpClient(address="127.0.0.1", port=10001, device=RFL_C3000S)
-    print(client)
+    client = LaserSerialClient(device=RFL_C3000S, address="COM1", baudrate=9600)
+    # client = LaserUdpClient(device=RFL_C3000S, address="127.0.0.1:8099")
+    # client = LaserTcpClient(device=RFL_C3000S, address="127.0.0.1:10001")
 
     print(f'aiming_beam_off = {client.send("ABF")}')
     print(f'aiming_beam_on = {client.send("ABN")}')

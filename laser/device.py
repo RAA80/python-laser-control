@@ -2,7 +2,6 @@
 
 """Файл, содержащий настройки приборов."""
 
-
 # Назначение полей таблиц настроек:
 #   1. Название команды (в верхнем регистре)
 #       * Назначение команды "func":
@@ -13,9 +12,21 @@
 #                         float, int, str - тип аргумента
 #           - для чтения: float, int, str - тип возвращаемого значения
 
+from __future__ import annotations
+
+from typing import Literal, TypedDict
+
+
+class LASER_PARAMS(TypedDict):
+    func: Literal["set", "get"]
+    type: object
+
+
+LASER_DEVICE = dict[str, LASER_PARAMS]
+
 
 # таблица настроек Raycus RFL-C3000S
-RFL_C3000S = {
+RFL_C3000S: LASER_DEVICE = {
     "ABF":     {"func": "set", "type": None},   # Aiming Beam OFF
     "ABN":     {"func": "set", "type": None},   # Aiming Beam ON
     "DEABC":   {"func": "set", "type": None},   # Disable External Aiming Beam Control
@@ -55,7 +66,7 @@ RFL_C3000S = {
 }
 
 # таблица настроек Raycus RFL-C3000XZ, RFL-C4000XZ и т.д.
-RFL_XZ_SERIES = {
+RFL_XZ_SERIES: LASER_DEVICE = {
     "ABF":     {"func": "set", "type": None},   # Aiming Beam OFF
     "ABN":     {"func": "set", "type": None},   # Aiming Beam ON
     "DEABC":   {"func": "set", "type": None},   # Disable External Aiming Beam Control
@@ -89,7 +100,7 @@ RFL_XZ_SERIES = {
 }
 
 # таблица настроек Raycus RFL-1500/1500-ABP, RFL-2000/2000-ABP и т.д.
-RFL_ABP_SERIES = {
+RFL_ABP_SERIES: LASER_DEVICE = {
     "ABF":     {"func": "set", "type": None},   # Aiming Beam OFF
     "ABN":     {"func": "set", "type": None},   # Aiming Beam ON
     "DEABC":   {"func": "set", "type": None},   # Disable External Aiming Beam Control
@@ -123,7 +134,7 @@ RFL_ABP_SERIES = {
 }
 
 # таблица настроек Raycus RFL-QCW150/1500
-RFL_QCW150_1500 = {
+RFL_QCW150_1500: LASER_DEVICE = {
     "ABF":   {"func": "set", "type": None},     # Aiming Beam OFF
     "ABN":   {"func": "set", "type": None},     # Aiming Beam ON
     "DEABC": {"func": "set", "type": None},     # Disable External Aiming Beam Control
@@ -160,7 +171,7 @@ RFL_QCW150_1500 = {
 }
 
 # таблица настроек IPG YLR_SERIES
-YLR_SERIES = {
+YLR_SERIES: LASER_DEVICE = {
     "ABF":   {"func": "set", "type": None},     # Aiming Beam OFF
     "ABN":   {"func": "set", "type": None},     # Aiming Beam ON
     "DEABC": {"func": "set", "type": None},     # Disable External Aiming Beam Control

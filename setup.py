@@ -3,7 +3,7 @@
 from setuptools import setup
 
 setup(name="python-laser-control",
-      version="0.0.2",
+      version="0.0.3",
       description="Laser Control Protocol",
       url="https://github.com/RAA80/python-laser-control",
       author="Alexey Ryadno",
@@ -23,7 +23,6 @@ setup(name="python-laser-control",
                    "Operating System :: POSIX :: Linux",
                    "Operating System :: POSIX",
                    "Programming Language :: Python :: 3",
-                   "Programming Language :: Python :: 3.8",
                    "Programming Language :: Python :: 3.9",
                    "Programming Language :: Python :: 3.10",
                    "Programming Language :: Python :: 3.11",

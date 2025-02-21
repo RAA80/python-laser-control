@@ -1,8 +1,11 @@
 #! /usr/bin/env python3
 
+from __future__ import annotations
+
 import logging
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import Widget, messagebox, ttk
+from typing import Callable
 
 from laser.client import LaserSerialClient, LaserTcpClient, LaserUdpClient
 from laser.device import RFL_C3000S
@@ -11,7 +14,7 @@ from laser.protocol import LaserProtocolError
 logging.basicConfig(level=logging.DEBUG)
 
 
-def catch(func):
+def catch(func: Callable) -> Callable:
     def wrapper(*arg, **kwarg):
         try:
             answer = func(*arg, **kwarg)
@@ -27,14 +30,14 @@ def catch(func):
 class CreateToolTip:
     """Create a tooltip for a given widget."""
 
-    def __init__(self, widget, text="widget info"):
+    def __init__(self, widget: Widget, text: str = "widget info") -> None:
         self.widget = widget
         self.text = text
         self.tw = None
         self.widget.bind("<Enter>", self.enter)
         self.widget.bind("<Leave>", self.close)
 
-    def enter(self, event=None):
+    def enter(self, event=None) -> None:
         x = self.widget.winfo_rootx() + 25
         y = self.widget.winfo_rooty() + 20
 
@@ -47,37 +50,39 @@ class CreateToolTip:
 
         self.widget.after(3000, self.close)
 
-    def close(self, event=None):
+    def close(self, event=None) -> None:
         if self.tw:
             self.tw.destroy()
 
 
 class RaycusGUI:
-    def __init__(self):
+    def __init__(self) -> None:
         self.root = tk.Tk()
         self.root.title("Raycus GUI")
         self.root.protocol("WM_DELETE_WINDOW", self.root.quit)
         self.root.resizable(width=False, height=False)
 
-        self.client = None
+        self.client: LaserSerialClient | LaserTcpClient | LaserUdpClient = None
 
         client_frame = ttk.Frame(self.root)
         client_frame.pack(side="left", fill="both", ipady=2, ipadx=2, pady=2, padx=2)
 
-        client_label = ttk.Label(client_frame, text="Select client type")
+        client_label = ttk.Label(client_frame, text="Client type")
         client_label.pack(side="top", fill="x", pady=2, padx=2)
 
         self.client_type_var = tk.StringVar()
         client_type_list = ["TCP", "UDP", "SERIAL"]
         client_combo = ttk.Combobox(client_frame, values=client_type_list, textvariable=self.client_type_var, state="readonly", justify="center")
         client_combo.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(client_combo, "Select client type")
 
-        address_label = ttk.Label(client_frame, text="Set address")
+        address_label = ttk.Label(client_frame, text="Address")
         address_label.pack(side="top", fill="x", pady=2, padx=2)
 
         self.address_var = tk.StringVar()
         address_entry = ttk.Entry(client_frame, textvariable=self.address_var, width=15, justify="center")
         address_entry.pack(side="top", fill="x", pady=2, padx=2)
+        CreateToolTip(address_entry, "Set serial port name or IP:PORT address")
 
         connect = ttk.Button(client_frame, text="Connect", command=self.connect)
         connect.pack(side="top", fill="x", pady=2, padx=2)
@@ -576,12 +581,14 @@ class RaycusGUI:
         self.read_status_task = None
         self.root.mainloop()
 
-    def connect(self):
+    def connect(self) -> None:
         try:
-            self.client = {"TCP": LaserTcpClient,
-                           "UDP": LaserUdpClient,
-                           "SERIAL": LaserSerialClient,
-                          }[self.client_type_var.get()](address=self.address_var.get(), device=RFL_C3000S)
+            if self.client_type_var.get() == "SERIAL":
+                self.client = LaserSerialClient(device=RFL_C3000S, address=self.address_var.get(), baudrate=9600)
+            elif self.client_type_var.get() == "TCP":
+                self.client = LaserTcpClient(device=RFL_C3000S, address=self.address_var.get())
+            elif self.client_type_var.get() == "UDP":
+                self.client = LaserUdpClient(device=RFL_C3000S, address=self.address_var.get())
         except Exception:
             self.connect_var.set("Status: NOT CONNECTED")
             self.client = None
@@ -589,165 +596,165 @@ class RaycusGUI:
             self.connect_var.set("Status: CONNECTED")
 
     @catch
-    def aiming_beam_off(self):
+    def aiming_beam_off(self) -> None:
         self.client.send("ABF")
 
     @catch
-    def aiming_beam_on(self):
+    def aiming_beam_on(self) -> None:
         self.client.send("ABN")
 
     @catch
-    def disable_external_aiming_beam_control(self):
+    def disable_external_aiming_beam_control(self) -> None:
         self.client.send("DEABC")
 
     @catch
-    def enable_external_aiming_beam_control(self):
+    def enable_external_aiming_beam_control(self) -> None:
         self.client.send("EEABC")
 
     @catch
-    def disable_external_control(self):
+    def disable_external_control(self) -> None:
         self.client.send("DEC")
 
     @catch
-    def enable_external_control(self):
+    def enable_external_control(self) -> None:
         self.client.send("EEC")
 
     @catch
-    def disable_hardware_emission_control(self):
+    def disable_hardware_emission_control(self) -> None:
         self.client.send("DLE")
 
     @catch
-    def enable_hardware_emission_control(self):
+    def enable_hardware_emission_control(self) -> None:
         self.client.send("ELE")
 
     @catch
-    def disable_gate_mode(self):
+    def disable_gate_mode(self) -> None:
         self.client.send("DGM")
 
     @catch
-    def enable_gate_mode(self):
+    def enable_gate_mode(self) -> None:
         self.client.send("EGM")
 
     @catch
-    def stop_emission(self):
+    def stop_emission(self) -> None:
         self.client.send("EMOFF")
 
     @catch
-    def start_emission(self):
+    def start_emission(self) -> None:
         self.client.send("EMON")
 
     @catch
-    def main_power_off(self):
+    def main_power_off(self) -> None:
         self.client.send("MPWROFF")
 
     @catch
-    def main_power_on(self):
+    def main_power_on(self) -> None:
         self.client.send("MPWRON")
 
     @catch
-    def reset_errors(self):
+    def reset_errors(self) -> None:
         self.client.send("PERR")
 
     @catch
-    def program_stop(self):
+    def program_stop(self) -> None:
         self.client.send("PSTP")
 
     @catch
-    def program_start(self):
+    def program_start(self) -> None:
         value = self.program_start_var.get()
         self.client.send("PSRT", value)
 
     @catch
-    def set_pulse_width(self):
+    def set_pulse_width(self) -> None:
         value = self.pulse_width_var.get()
         self.client.send("SPW", value)
 
     @catch
-    def set_pulse_repetition_rate(self):
+    def set_pulse_repetition_rate(self) -> None:
         value = self.pulse_repetition_rate_var.get()
         self.client.send("SPRR", value)
 
     @catch
-    def set_diode_current(self):
+    def set_diode_current(self) -> None:
         value = self.diode_current_var.get()
         self.client.send("SDC", value)
 
     @catch
-    def set_ip(self):
+    def set_ip(self) -> None:
         value = self.ip_var.get()
         self.client.send("SIP", value)
 
     @catch
-    def set_subnet_mask(self):
+    def set_subnet_mask(self) -> None:
         value = self.subnet_mask_var.get()
         self.client.send("SMASK", value)
 
     @catch
-    def set_up_time(self):
+    def set_up_time(self) -> None:
         value = self.up_time_var.get()
         self.client.send("SUT", value)
 
     @catch
-    def set_down_time(self):
+    def set_down_time(self) -> None:
         value = self.down_time_var.get()
         self.client.send("SDT", value)
 
     @catch
-    def read_current_set_point(self):
+    def read_current_set_point(self) -> None:
         value = self.client.send("RCS")
         self.current_set_point_var.set(value)
 
     @catch
-    def read_pulse_repetition_rate(self):
+    def read_pulse_repetition_rate(self) -> None:
         value = self.client.send("RPRR")
         self.read_pulse_repetition_rate_var.set(value)
 
     @catch
-    def read_board_temperature(self):
+    def read_board_temperature(self) -> None:
         value = self.client.send("RBT")
         self.read_board_temperature_var.set(value)
 
     @catch
-    def read_pulse_width(self):
+    def read_pulse_width(self) -> None:
         value = self.client.send("RPW")
         self.read_pulse_width_var.set(value)
 
     @catch
-    def read_laser_temperature(self):
+    def read_laser_temperature(self) -> None:
         value = self.client.send("RCT")
         self.read_laser_temperature_var.set(value)
 
     @catch
-    def read_output_power(self):
+    def read_output_power(self) -> None:
         value = self.client.send("ROP")
         self.read_output_power_var.set(value)
 
     @catch
-    def read_serial_number(self):
+    def read_serial_number(self) -> None:
         value = self.client.send("RSN")
         self.read_serial_number_var.set(value)
 
     @catch
-    def read_ip(self):
+    def read_ip(self) -> None:
         value = self.client.send("RIP")
         self.read_ip_var.set(value)
 
     @catch
-    def read_subnet_mask(self):
+    def read_subnet_mask(self) -> None:
         value = self.client.send("RMASK")
         self.read_subnet_mask_var.set(value)
 
     @catch
-    def read_up_time(self):
+    def read_up_time(self) -> None:
         value = self.client.send("RUT")
         self.read_up_time_var.set(value)
 
     @catch
-    def read_down_time(self):
+    def read_down_time(self) -> None:
         value = self.client.send("RDT")
         self.read_down_time_var.set(value)
 
-    def read_device_status(self):
+    def read_device_status(self) -> None:
         self.read_status_task = self.root.after(500, self.read_device_status)
 
         try:

@@ -46,14 +46,14 @@ STATUS = {"EMON": lambda value: value | 1 << 2,
 class BaseSimulator:
     """Базовый класс для симуляторов лазера."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Инициализация экземпляра класса."""
 
         self.sock = None
         self.conn = None
         self.addr = None
 
-    def close(self):
+    def close(self) -> None:
         """Закрывает соединение и освобождает ресурсы."""
 
         if self.sock:
@@ -67,7 +67,7 @@ class BaseSimulator:
 class LaserTCPSimulator(BaseSimulator):
     """Симулятор TCP-соединения для лазера."""
 
-    def connect(self, address):
+    def connect(self, address: str) -> None:
         """Устанавливает TCP-соединение на указанный адрес."""
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -76,14 +76,14 @@ class LaserTCPSimulator(BaseSimulator):
         self.sock.bind((address, 10001))
         self.sock.listen(1)
 
-    def accept(self):
+    def accept(self) -> None:
         """Принимает входящее соединение."""
 
         if self.conn:
             self.conn.close()
         self.conn, self.addr = self.sock.accept()
 
-    def read(self, size):
+    def read(self, size: int) -> bytes:
         """Читает данные из сокета."""
 
         try:
@@ -91,7 +91,7 @@ class LaserTCPSimulator(BaseSimulator):
         except OSError:
             self.conn.close()
 
-    def write(self, data):
+    def write(self, data: bytes) -> None:
         """Отправляет данные через сокет."""
 
         self.conn.sendall(data)
@@ -100,7 +100,7 @@ class LaserTCPSimulator(BaseSimulator):
 class LaserUDPSimulator(BaseSimulator):
     """Симулятор UDP-соединения для лазера."""
 
-    def connect(self, address):
+    def connect(self, address: str) -> None:
         """Устанавливает UDP-соединение на указанный адрес."""
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -108,18 +108,18 @@ class LaserUDPSimulator(BaseSimulator):
         self.sock.settimeout(1.0)
         self.sock.bind((address, 8099))
 
-    def accept(self):
+    def accept(self) -> None:
         """Принимает входящее соединение."""
 
         self.conn, self.addr = None, None
 
-    def read(self, size):
+    def read(self, size: int) -> bytes:
         """Читает данные из сокета."""
 
         data, self.addr = self.sock.recvfrom(size)
         return data
 
-    def write(self, data):
+    def write(self, data: bytes) -> None:
         """Отправляет данные через сокет."""
 
         self.sock.sendto(data, self.addr)
@@ -128,22 +128,22 @@ class LaserUDPSimulator(BaseSimulator):
 class LaserSerialSimulator(BaseSimulator):
     """Симулятор соединения через RS-232 для лазера."""
 
-    def connect(self, address):
+    def connect(self, address: str) -> None:
         """Устанавливает серийное соединение на указанный порт."""
 
         self.sock = Serial(port=address, timeout=1.0)
 
-    def accept(self):
+    def accept(self) -> None:
         """Принимает входящее соединение."""
 
         self.conn, self.addr = None, None
 
-    def read(self, size):
+    def read(self, size: int) -> bytes:
         """Читает данные из серийного порта до символа перевода строки."""
 
         return self.sock.read_until(b"\r", size=size)
 
-    def write(self, data):
+    def write(self, data: bytes) -> None:
         """Отправляет данные через серийный порт."""
 
         self.sock.write(data)
@@ -152,20 +152,20 @@ class LaserSerialSimulator(BaseSimulator):
 class Simulator:
     """Класс симулятора."""
 
-    def __init__(self, factory, address):
+    def __init__(self, factory: object, address: str) -> None:
         """Инициализация экземпляра класса с указанным фабричным методом и адресом."""
 
         self.factory = factory()
         self.start(address)
 
     @staticmethod
-    def process_switcher(cmd, data):
+    def process_switcher(cmd: str, data: str) -> str:
         """Обрабатывает команды, изменяющие состояние устройства."""
 
         STORAGE["STA"] = STATUS[cmd](STORAGE["STA"])
         return data
 
-    def process_setter(self, cmd, data):
+    def process_setter(self, cmd: str, data: str) -> str:
         """Обрабатывает команды, устанавливающие значения параметров устройства."""
 
         if value := re.search(r"(\S+)\r", data):
@@ -175,7 +175,7 @@ class Simulator:
         return self.process_error()
 
     @staticmethod
-    def process_getter(cmd, data):
+    def process_getter(cmd: str, data: str) -> str:
         """Обрабатывает команды, получающие значения параметров устройства."""
 
         key = {"RDT": "SDT", "RIP": "SIP", "RMASK": "SMASK", "RCS": "SDC",
@@ -184,12 +184,12 @@ class Simulator:
         return f"{cmd}: {STORAGE[key]}\r"
 
     @staticmethod
-    def process_error():
+    def process_error() -> str:
         """Возвращает сообщение об ошибке при неверной команде."""
 
         return "BCMD\r"
 
-    def process_data(self, data):
+    def process_data(self, data: str) -> str:
         """Обрабатывает входящие данные, вызывая соответствующий метод обработки."""
 
         command = {"ABF|ABN|DEABC|EEABC|DEC|EEC|DLE|ELE|DGM|EGM|EMOFF|EMON|MPWROFF|MPWRON|PERR|PSTP": self.process_switcher,
@@ -201,7 +201,7 @@ class Simulator:
 
         return self.process_error()
 
-    def start(self, address):
+    def start(self, address: str) -> None:
         """Запускает симулятор, подключаясь к указанному адресу."""
 
         self.factory.connect(address)
@@ -220,12 +220,18 @@ class Simulator:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Laser Protocol Simulator command-line option")
+    parser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter,
+                                     description="Laser Protocol Simulator command-line option",
+                                     epilog="Usage example:\n"
+                                            "laser-simulator --method TCP --address localhost\n"
+                                            "laser-simulator --method UDP --address localhost\n"
+                                            "laser-simulator --method SERIAL --address COM1")
+
     parser.add_argument("--method", type=str, required=True,
                                     choices=["SERIAL", "TCP", "UDP"],
-                                    help="select factory method")
+                                    help="factory method")
     parser.add_argument("--address", type=str, required=True,
-                                     help="select serial port or IP-address")
+                                     help="pseudo serial port or IP-address")
     args = parser.parse_args()
 
     method = {"SERIAL": LaserSerialSimulator,
